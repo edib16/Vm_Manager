@@ -1,5 +1,8 @@
 # Ignorer les environnements virtuels
 venv/
+.venv/
+venv_flask/
+env/
 .env/
 
 # Ignorer les fichiers Python compilés
@@ -14,10 +17,16 @@ __pycache__/
 *.tmp
 *.swp
 
-# Ignorer les fichiers et dossiers spécifiques à l’éditeur
+# Ignorer les fichiers et dossiers spécifiques à l'éditeur
 .vscode/
 .idea/
 
 # Ignorer les fichiers système
 .DS_Store
 Thumbs.db
+
+# Ignorer les VMs et données volatiles
+student_vms/*/
+!student_vms/.gitkeep
+*.box
+.vagrant/
