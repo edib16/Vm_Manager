@@ -269,11 +269,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok) {
                 // Message spécial pour Windows
                 if (payload.os === "windows") {
-                    logMessage(`✅ VM Windows créée ! Compte configuré :`, "success");
+                    logMessage(` VM Windows créée ! Compte configuré :`, "success");
                     logMessage(`   • ${payload.vm_username} / ${payload.vm_password} (Administrateur)`, "info");
                     logMessage(`   • vagrant / ${payload.vm_password} (masqué, même mdp)`, "info");
-                    logMessage("⌨️ Clavier: AZERTY configuré", "success");
-                    logMessage("👤 Votre compte apparaît à l'écran de connexion", "info");
+                    logMessage(" Clavier: AZERTY configuré", "success");
+                    logMessage(" Votre compte apparaît à l'écran de connexion", "info");
                 }
                 
                 vmNameInput.value = "";
@@ -345,6 +345,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         </button>
                         <button class="view-vm-btn" data-vm="${vm.name}" ${!isRunning ? 'disabled' : ''}>
                             🖥 GUI
+                        </button>
+                        <button class="request-resources-btn" data-vm="${vm.name}">
+                            📊 Demander ressources
                         </button>
                         <button class="delete-vm-btn" data-vm="${vm.name}" ${isRunning ? 'disabled' : ''}>
                             🗑 Supprimer
@@ -551,4 +554,144 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     }
+
+    // -------------------- Modal demande de ressources --------------------
+    const resourceRequestModal = document.getElementById("resourceRequestModal");
+    const closeResourceModal = document.getElementById("closeResourceModal");
+    const resourceVmName = document.getElementById("resourceVmName");
+    const currentRam = document.getElementById("currentRam");
+    const currentCpu = document.getElementById("currentCpu");
+    const currentStorage = document.getElementById("currentStorage");
+    const requestedRam = document.getElementById("requestedRam");
+    const requestedCpu = document.getElementById("requestedCpu");
+    const requestedStorage = document.getElementById("requestedStorage");
+    const requestReason = document.getElementById("requestReason");
+    const submitResourceRequest = document.getElementById("submitResourceRequest");
+
+    // Validation du formulaire de demande
+    function validateResourceRequest() {
+        const ram = parseFloat(requestedRam?.value);
+        const cpu = parseInt(requestedCpu?.value);
+        const storage = parseInt(requestedStorage?.value);
+        const reason = requestReason?.value?.trim() || "";
+
+        const ramValid = !isNaN(ram) && ram >= parseFloat(currentRam?.textContent || 0);
+        const cpuValid = !isNaN(cpu) && cpu >= parseInt(currentCpu?.textContent || 0);
+        const storageValid = !isNaN(storage) && storage >= parseInt(currentStorage?.textContent || 0);
+        const reasonValid = reason.length >= 10;
+
+        const reasonHelp = document.getElementById("reasonHelp");
+        if (reasonHelp) {
+            if (!reason) {
+                reasonHelp.textContent = "Motif obligatoire";
+                reasonHelp.style.color = "var(--error)";
+            } else if (!reasonValid) {
+                reasonHelp.textContent = `${reason.length}/10 caractères minimum`;
+                reasonHelp.style.color = "var(--error)";
+            } else {
+                reasonHelp.textContent = `✓ ${reason.length} caractères`;
+                reasonHelp.style.color = "var(--success)";
+            }
+        }
+
+        const allValid = ramValid && cpuValid && storageValid && reasonValid;
+        if (submitResourceRequest) submitResourceRequest.disabled = !allValid;
+        return allValid;
+    }
+
+    requestedRam?.addEventListener("input", validateResourceRequest);
+    requestedCpu?.addEventListener("input", validateResourceRequest);
+    requestedStorage?.addEventListener("input", validateResourceRequest);
+    requestReason?.addEventListener("input", validateResourceRequest);
+
+    // Ouvrir le modal
+    vmList?.addEventListener("click", async (e) => {
+        if (e.target.classList.contains("request-resources-btn")) {
+            const vmName = e.target.dataset.vm;
+            if (!vmName) return;
+
+            resourceVmName.value = vmName;
+
+            try {
+                // Récupérer les specs actuelles
+                const res = await fetch(`/api/get_vm_specs/${vmName}`);
+                const data = await res.json();
+
+                if (data.success) {
+                    currentRam.textContent = data.specs.ram_gb.toFixed(1);
+                    currentCpu.textContent = data.specs.cpu;
+                    currentStorage.textContent = data.specs.storage_gb;
+
+                    // Pré-remplir avec les valeurs actuelles
+                    requestedRam.value = Math.ceil(data.specs.ram_gb);
+                    requestedCpu.value = data.specs.cpu;
+                    requestedStorage.value = data.specs.storage_gb;
+
+                    requestReason.value = "";
+                    validateResourceRequest();
+
+                    resourceRequestModal.style.display = "flex";
+                } else {
+                    logMessage(data.message || "Erreur récupération specs", "error");
+                }
+            } catch (err) {
+                console.error("Erreur:", err);
+                logMessage("Erreur lors de la récupération des specs", "error");
+            }
+        }
+    });
+
+    // Fermer le modal
+    closeResourceModal?.addEventListener("click", () => {
+        resourceRequestModal.style.display = "none";
+    });
+
+    resourceRequestModal?.addEventListener("click", (e) => {
+        if (e.target === resourceRequestModal) {
+            resourceRequestModal.style.display = "none";
+        }
+    });
+
+    // Soumettre la demande
+    submitResourceRequest?.addEventListener("click", async () => {
+        if (!validateResourceRequest()) {
+            logMessage("Formulaire invalide", "error");
+            return;
+        }
+
+        const payload = {
+            vm_name: resourceVmName.value,
+            requested_ram_mb: parseFloat(requestedRam.value) * 1024,
+            requested_cpu: parseInt(requestedCpu.value),
+            requested_storage_gb: parseInt(requestedStorage.value),
+            reason: requestReason.value.trim()
+        };
+
+        submitResourceRequest.disabled = true;
+        submitResourceRequest.textContent = "📧 Envoi en cours...";
+
+        try {
+            const res = await fetch("/api/request_resources", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                logMessage(data.message, "success");
+                resourceRequestModal.style.display = "none";
+                alert("✅ Demande envoyée !\n\nVotre demande a été enregistrée et un email a été envoyé à l'administrateur.\nVous serez notifié une fois la demande traitée.");
+            } else {
+                logMessage(data.message || "Erreur lors de l'envoi", "error");
+            }
+        } catch (err) {
+            console.error("Erreur:", err);
+            logMessage("Erreur lors de l'envoi de la demande", "error");
+        } finally {
+            submitResourceRequest.disabled = false;
+            submitResourceRequest.textContent = "📧 Envoyer la demande";
+        }
+    });
 });

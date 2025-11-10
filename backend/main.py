@@ -12,8 +12,10 @@ import socket
 import signal
 import sys
 import os  # ← déjà présent
+import database
+from email_config import send_resource_request_email
 
-# Éviter l’avertissement du plugin vagrant-winrm (inutile)
+# Éviter l'avertissement du plugin vagrant-winrm (inutile)
 os.environ.setdefault('VAGRANT_IGNORE_WINRM_PLUGIN', '1')
 
 # -------------------- Chemins absolus pour templates et static --------------------
@@ -1051,6 +1053,145 @@ def get_vnc_url(vm_name):
         'ws_port': ws_port,
         'vnc_port': vnc_port
     })
+
+# -------------------- Demande de ressources --------------------
+@app.route('/api/request_resources', methods=['POST'])
+@login_required
+def request_resources():
+    """
+    Enregistre une demande d'augmentation de ressources et envoie un email à l'admin.
+    """
+    data = request.get_json() or {}
+    vm_name = data.get('vm_name')
+    requested_ram_mb = data.get('requested_ram_mb')
+    requested_cpu = data.get('requested_cpu')
+    requested_storage_gb = data.get('requested_storage_gb')
+    reason = data.get('reason', '').strip()
+    
+    # Validation
+    if not vm_name:
+        return jsonify({'success': False, 'message': 'Nom de VM requis'}), 400
+    
+    if not reason or len(reason) < 10:
+        return jsonify({'success': False, 'message': 'Motif requis (minimum 10 caractères)'}), 400
+    
+    # Vérifier la propriété de la VM
+    allowed, vm_path = check_vm_ownership(current_user.username, vm_name)
+    if not allowed:
+        return jsonify({'success': False, 'message': 'VM introuvable ou accès refusé'}), 403
+    
+    # Récupérer les specs actuelles depuis le Vagrantfile
+    try:
+        vagrantfile_path = vm_path / "Vagrantfile"
+        if not vagrantfile_path.exists():
+            return jsonify({'success': False, 'message': 'Vagrantfile introuvable'}), 404
+        
+        content = vagrantfile_path.read_text()
+        
+        # Parser les valeurs actuelles (regex simple)
+        import re
+        current_ram = int(re.search(r'lv\.memory\s*=\s*(\d+)', content).group(1)) if re.search(r'lv\.memory\s*=\s*(\d+)', content) else 2048
+        current_cpu = int(re.search(r'lv\.cpus\s*=\s*(\d+)', content).group(1)) if re.search(r'lv\.cpus\s*=\s*(\d+)', content) else 2
+        
+        # Le stockage est difficile à récupérer, on met une valeur par défaut
+        # TODO: Récupérer depuis virsh domblklist
+        current_storage = 20  # GB par défaut
+        
+        current_specs = {
+            'ram_mb': current_ram,
+            'cpu': current_cpu,
+            'storage_gb': current_storage
+        }
+        
+        requested_specs = {
+            'ram_mb': int(requested_ram_mb),
+            'cpu': int(requested_cpu),
+            'storage_gb': int(requested_storage_gb)
+        }
+        
+        # Validation: les nouvelles valeurs doivent être >= actuelles
+        if requested_specs['ram_mb'] < current_specs['ram_mb']:
+            return jsonify({'success': False, 'message': 'RAM demandée inférieure à la RAM actuelle'}), 400
+        if requested_specs['cpu'] < current_specs['cpu']:
+            return jsonify({'success': False, 'message': 'CPU demandés inférieurs au CPU actuel'}), 400
+        if requested_specs['storage_gb'] < current_specs['storage_gb']:
+            return jsonify({'success': False, 'message': 'Stockage demandé inférieur au stockage actuel'}), 400
+        
+        # Enregistrer dans la DB
+        request_id = database.add_resource_request(
+            username=current_user.username,
+            vm_name=vm_name,
+            current_specs=current_specs,
+            requested_specs=requested_specs,
+            reason=reason
+        )
+        
+        # Envoyer l'email
+        email_sent = send_resource_request_email(
+            username=current_user.username,
+            vm_name=vm_name,
+            current_specs=current_specs,
+            requested_specs=requested_specs,
+            reason=reason
+        )
+        
+        if email_sent:
+            message = f'Demande enregistrée (ID: {request_id}) et email envoyé à l\'administrateur.'
+        else:
+            message = f'Demande enregistrée (ID: {request_id}) mais échec de l\'envoi de l\'email. L\'administrateur sera notifié.'
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'request_id': request_id
+        })
+        
+    except Exception as e:
+        print(f"Erreur request_resources: {e}")
+        return jsonify({'success': False, 'message': f'Erreur: {str(e)}'}), 500
+
+@app.route('/api/get_vm_specs/<vm_name>')
+@login_required
+def get_vm_specs(vm_name):
+    """
+    Récupère les spécifications actuelles d'une VM.
+    """
+    if not vm_name:
+        return jsonify({'success': False, 'message': 'Nom de VM requis'}), 400
+    
+    # Vérifier la propriété
+    allowed, vm_path = check_vm_ownership(current_user.username, vm_name)
+    if not allowed:
+        return jsonify({'success': False, 'message': 'VM introuvable ou accès refusé'}), 403
+    
+    try:
+        vagrantfile_path = vm_path / "Vagrantfile"
+        if not vagrantfile_path.exists():
+            return jsonify({'success': False, 'message': 'Vagrantfile introuvable'}), 404
+        
+        content = vagrantfile_path.read_text()
+        
+        # Parser les valeurs actuelles
+        import re
+        current_ram = int(re.search(r'lv\.memory\s*=\s*(\d+)', content).group(1)) if re.search(r'lv\.memory\s*=\s*(\d+)', content) else 2048
+        current_cpu = int(re.search(r'lv\.cpus\s*=\s*(\d+)', content).group(1)) if re.search(r'lv\.cpus\s*=\s*(\d+)', content) else 2
+        
+        # Stockage par défaut (difficile à récupérer dynamiquement)
+        current_storage = 20
+        
+        return jsonify({
+            'success': True,
+            'specs': {
+                'ram_mb': current_ram,
+                'ram_gb': current_ram / 1024,
+                'cpu': current_cpu,
+                'storage_gb': current_storage
+            }
+        })
+        
+    except Exception as e:
+        print(f"Erreur get_vm_specs: {e}")
+        return jsonify({'success': False, 'message': f'Erreur: {str(e)}'}), 500
 
 # -------------------- Lancement Flask --------------------
 if __name__ == '__main__':

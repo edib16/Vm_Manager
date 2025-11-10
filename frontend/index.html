@@ -221,6 +221,85 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=14"></script>
+    <!-- Modal demande de ressources -->
+    <div id="resourceRequestModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>📊 Demander plus de ressources</h2>
+                <button id="closeResourceModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--muted); margin-bottom: 1.5rem;">
+                    Remplissez ce formulaire pour demander une augmentation des ressources de votre VM.
+                    L'administrateur recevra un email et traitera votre demande.
+                </p>
+
+                <!-- VM sélectionnée -->
+                <div class="form-group">
+                    <label>Machine virtuelle</label>
+                    <input id="resourceVmName" type="text" class="input-field" readonly style="background: rgba(255,255,255,0.05);">
+                </div>
+
+                <!-- Specs actuelles (lecture seule) -->
+                <div class="note" style="margin-bottom: 1.5rem;">
+                    <strong>Ressources actuelles :</strong><br>
+                    <div id="currentSpecs" style="margin-top: 0.5rem; font-family: monospace;">
+                        💾 RAM : <span id="currentRam">...</span> GB<br>
+                        ⚙️ CPU : <span id="currentCpu">...</span> vCPU(s)<br>
+                        💿 Stockage : <span id="currentStorage">...</span> GB
+                    </div>
+                </div>
+
+                <!-- Nouvelles ressources demandées -->
+                <div class="form-group">
+                    <label for="requestedRam">
+                        💾 RAM souhaitée (GB) <span class="required">*</span>
+                    </label>
+                    <input id="requestedRam" type="number" min="1" max="64" step="1" class="input-field" required>
+                    <div class="form-help-text">Minimum: valeur actuelle</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="requestedCpu">
+                        ⚙️ CPU souhaités (vCPU) <span class="required">*</span>
+                    </label>
+                    <input id="requestedCpu" type="number" min="1" max="16" step="1" class="input-field" required>
+                    <div class="form-help-text">Minimum: valeur actuelle</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="requestedStorage">
+                        💿 Stockage souhaité (GB) <span class="required">*</span>
+                    </label>
+                    <input id="requestedStorage" type="number" min="10" max="500" step="10" class="input-field" required>
+                    <div class="form-help-text">Minimum: valeur actuelle</div>
+                </div>
+
+                <!-- Motif -->
+                <div class="form-group">
+                    <label for="requestReason">
+                        📝 Motif de la demande <span class="required">*</span>
+                    </label>
+                    <textarea 
+                        id="requestReason" 
+                        class="input-field" 
+                        rows="4" 
+                        placeholder="Expliquez pourquoi vous avez besoin de plus de ressources (minimum 10 caractères)..."
+                        required
+                        minlength="10"
+                        style="resize: vertical; font-family: inherit;"
+                    ></textarea>
+                    <div id="reasonHelp" class="form-help-text">Minimum 10 caractères</div>
+                </div>
+
+                <!-- Bouton d'envoi -->
+                <button id="submitResourceRequest" class="primary-btn" disabled>
+                    📧 Envoyer la demande
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=15"></script>
 </body>
 </html>
