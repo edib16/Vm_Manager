@@ -1,32 +1,23 @@
-# Ignorer les environnements virtuels
-venv/
-.venv/
-venv_flask/
-env/
-.env/
-
-# Ignorer les fichiers Python compilés
+STDIN
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.env.*
+.venv
+venv/
+pip-log.txt
 
-# Ignorer les logs
-*.log
-
-# Ignorer les fichiers temporaires
-*.tmp
+# OS / editors
+.DS_Store
+thumbs.db
 *.swp
 
-# Ignorer les fichiers et dossiers spécifiques à l'éditeur
-.vscode/
-.idea/
-
-# Ignorer les fichiers système
-.DS_Store
-Thumbs.db
-
-# Ignorer les VMs et données volatiles
-student_vms/*/
-!student_vms/.gitkeep
-*.box
-.vagrant/
+# Project-specific
+student_vms/
+resource_requests.db
+noVNC/   # si vous préférez ne pas versionner noVNC
+*.log
