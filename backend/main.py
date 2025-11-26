@@ -17,7 +17,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
-# Éviter l’avertissement du plugin vagrant-winrm (inutile)
+# Éviter l'avertissement du plugin vagrant-winrm (inutile)
 os.environ.setdefault('VAGRANT_IGNORE_WINRM_PLUGIN', '1')
 os.environ.setdefault('VAGRANT_DEFAULT_PROVIDER', 'libvirt')  # ← forcer libvirt par défaut
 
@@ -153,6 +153,28 @@ def get_vm_state(vm_name):
     except subprocess.CalledProcessError:
         return 'unknown'
 
+def ensure_box_installed(box_name, provider="libvirt"):
+    """
+    Vérifie si une box Vagrant est installée.
+    Retourne True si présente, False sinon.
+    """
+    try:
+        result = subprocess.run(
+            ['vagrant', 'box', 'list'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # Chercher la box avec le provider spécifié
+        # Format: "generic/debian12                           (libvirt, 4.3.12, (amd64))"
+        # On vérifie ligne par ligne pour gérer les espaces multiples
+        for line in result.stdout.splitlines():
+            if line.startswith(box_name) and f"({provider}," in line:
+                return True
+        return False
+    except subprocess.CalledProcessError:
+        return False
+
 # -------------------- Page principale --------------------
 @app.route('/')
 def index():
@@ -188,6 +210,55 @@ def api_login():
 def api_logout():
     logout_user()
     return jsonify({'success': True, 'message': 'Déconnexion réussie'})
+
+# -------------------- Easter Egg Cowsay --------------------
+@app.route('/api/cowsay')
+def api_cowsay():
+    """Easter egg: exécute cowsay avec le message."""
+    try:
+        # Vérifier si cowsay est installé
+        result = subprocess.run(
+            ['which', 'cowsay'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            # cowsay n'est pas installé, renvoyer une version ASCII art simple
+            output = """
+ _____________________
+< Réalisé par Edib >
+ ---------------------
+        \\   ^__^
+         \\  (oo)\\_______
+            (__)\\       )\\/\\
+                ||----w |
+                ||     ||
+"""
+        else:
+            # cowsay est installé, l'exécuter
+            result = subprocess.run(
+                ['cowsay', 'Réalisé par Edib'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            output = result.stdout
+        
+        return jsonify({'output': output})
+    except Exception as e:
+        # En cas d'erreur, renvoyer la version simple
+        output = """
+ _____________________
+< Réalisé par Edib >
+ ---------------------
+        \\   ^__^
+         \\  (oo)\\_______
+            (__)\\       )\\/\\
+                ||----w |
+                ||     ||
+"""
+        return jsonify({'output': output})
 
 # -------------------- Liste des VMs --------------------
 @app.route('/api/list_vms')
@@ -239,24 +310,38 @@ def create_vm():
     vm_password = data.get('vm_password')
     root_password = (data.get('root_password') or "").strip()
 
-    # OBLIGATOIRE: root_password
-    if not root_password:
-        return jsonify({'message': 'Mot de passe root/Administrator requis'}), 400
-    if len(root_password) < 6:
-        return jsonify({'message': 'Le mot de passe root/Administrator doit contenir au moins 6 caractères'}), 400
+    # Validation root_password : OBLIGATOIRE pour Debian, OPTIONNEL pour Windows
+    if os_name != "windows":
+        if not root_password:
+            return jsonify({'message': 'Mot de passe root requis pour Debian'}), 400
+        if len(root_password) < 6:
+            return jsonify({'message': 'Le mot de passe root doit contenir au moins 6 caractères'}), 400
 
-    # AJOUT: snippet utilisé dans le provisioning Debian
-    # - définit le mot de passe root
-    # - déverrouille le compte si verrouillé
-    root_pass_snippet = f'''echo "root:{root_password}" | chpasswd
+    # Snippet pour définir le mot de passe root (Debian uniquement)
+    root_pass_snippet = ""
+    if os_name != "windows" and root_password:
+        root_pass_snippet = f'''echo "root:{root_password}" | chpasswd
 usermod -U root || true
 '''
 
     # Validation basique
     if not vm_username or not vm_password:
         return jsonify({'message': 'Nom d\'utilisateur et mot de passe requis'}), 400
-    if len(vm_password) < 6:
-        return jsonify({'message': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+    
+    # Validation spécifique Windows (complexité du mot de passe utilisateur uniquement)
+    if os_name == "windows":
+        if len(vm_password) < 8:
+            return jsonify({'message': 'Windows: mot de passe minimum 8 caractères'}), 400
+        if not re.search(r'[A-Z]', vm_password):
+            return jsonify({'message': 'Windows: mot de passe doit contenir au moins 1 majuscule'}), 400
+        if not re.search(r'[a-z]', vm_password):
+            return jsonify({'message': 'Windows: mot de passe doit contenir au moins 1 minuscule'}), 400
+        if not re.search(r'[0-9]', vm_password):
+            return jsonify({'message': 'Windows: mot de passe doit contenir au moins 1 chiffre'}), 400
+    else:
+        # Linux: validation simple
+        if len(vm_password) < 6:
+            return jsonify({'message': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
 
     # Nom de VM normalisé
     vm_name = re.sub(r'[^A-Za-z0-9._-]', '-', vm_name)[:64] if vm_name else f"vm-{int(datetime.datetime.utcnow().timestamp())}"
@@ -360,6 +445,7 @@ EOF
 
 echo "✅ XFCE + LightDM installés et démarrés (mode graphique)."
                 """.strip()
+                provision_script = provision_script.replace("{vm_username}", vm_username).replace("{vm_password}", vm_password).replace("{root_password}", root_password).replace("{root_pass_snippet}", root_pass_snippet)
             else:
                 memory, cpus, serial_console = 2048, 2, True
                 # Provisioning script pour Debian (serveur)
@@ -405,13 +491,57 @@ echo "ttyS0" >> /etc/securetty
 
 echo "✅ Clavier FR activé (console)"
                 """.strip()
+                provision_script = provision_script.replace("{vm_username}", vm_username).replace("{vm_password}", vm_password).replace("{root_password}", root_password).replace("{root_pass_snippet}", root_pass_snippet)
 
         elif os_name == "windows":
             # TEMP: forcer Server 2022 pour client/serveur (Win10/11 trop lourdes / indisponibles)
             box_name = "peru/windows-server-2022-standard-x64-eval"
             memory, cpus, serial_console = 6144, 2, False
             provision_script = f"""
-# Langue/Clavier FR
+# Configuration Windows - Clavier AZERTY uniquement
+# Interface reste en anglais pour eviter redemarrage
+
+Write-Host "=== Configuration Windows ==="
+
+# 1. Desactiver la complexite des mots de passe
+Write-Host "Desactivation complexite mots de passe..."
+secedit /export /cfg C:\\secpol.cfg | Out-Null
+(Get-Content C:\\secpol.cfg).replace("PasswordComplexity = 1", "PasswordComplexity = 0") | Out-File C:\\secpol.cfg
+secedit /configure /db C:\\windows\\security\\local.sdb /cfg C:\\secpol.cfg /areas SECURITYPOLICY | Out-Null
+Remove-Item -Force C:\\secpol.cfg -ErrorAction SilentlyContinue
+
+# 2. Configuration clavier AZERTY SYSTEME (pour toute la VM)
+Write-Host "Configuration clavier AZERTY systeme..."
+
+# METHODE PRINCIPALE: Forcer le clavier par defaut au niveau systeme
+# Cette commande force AZERTY pour TOUS les utilisateurs (y compris ecran de connexion)
+Set-WinDefaultInputMethodOverride -InputTip "040c:0000040c"
+
+# Configuration culture/region
+Set-Culture fr-FR -ErrorAction SilentlyContinue
+Set-WinHomeLocation -GeoId 84 -ErrorAction SilentlyContinue
+Set-TimeZone -Id "Romance Standard Time" -ErrorAction SilentlyContinue
+
+# Monter le registre HKU
+$null = New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS -ErrorAction SilentlyContinue
+
+# Configuration registre .DEFAULT (ecran de connexion et nouveaux comptes)
+New-Item -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Preload" -Force -ErrorAction SilentlyContinue | Out-Null
+Set-ItemProperty -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Preload" -Name "1" -Value "0000040c" -Force
+
+# Substitutes pour forcer AZERTY
+New-Item -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Substitutes" -Force -ErrorAction SilentlyContinue | Out-Null
+Set-ItemProperty -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Substitutes" -Name "00000409" -Value "0000040c" -Force
+
+# Configuration machine globale
+New-Item -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout\\DosKeybCodes" -Force -ErrorAction SilentlyContinue | Out-Null
+Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout\\DosKeybCodes" -Name "0000040c" -Value "fr" -Force
+
+# Definir AZERTY comme clavier par defaut dans le profil par defaut
+New-Item -Path "HKU:\\.DEFAULT\\Control Panel\\International" -Force -ErrorAction SilentlyContinue | Out-Null
+Set-ItemProperty -Path "HKU:\\.DEFAULT\\Control Panel\\International" -Name "LocaleName" -Value "fr-FR" -Force
+
+# Configuration du clavier au niveau systeme (Apply to all users)
 $LangList = New-WinUserLanguageList fr-FR
 Set-WinUserLanguageList $LangList -Force
 Set-Culture fr-FR
@@ -419,28 +549,33 @@ Set-WinSystemLocale fr-FR
 Set-WinUILanguageOverride fr-FR
 Set-TimeZone -Id "Romance Standard Time"
 
+# Clavier FR pour l'écran de logon
 New-Item -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Preload" -Force | Out-Null
 Set-ItemProperty -Path "HKU:\\.DEFAULT\\Keyboard Layout\\Preload" -Name "1" -Value "0000040C"
 
+# Définir le mot de passe Administrator (obligatoire)
 $adminPass = ConvertTo-SecureString "{root_password}" -AsPlainText -Force
 Set-LocalUser -Name "Administrator" -Password $adminPass
 
+# Créer l'utilisateur élève si absent et l'ajouter aux admins
 $username = "{vm_username}"
 $password = ConvertTo-SecureString "{vm_password}" -AsPlainText -Force
+
 $userExists = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
 if (-not $userExists) {{
   New-LocalUser -Name $username -Password $password -FullName "{vm_username}" -PasswordNeverExpires
   Add-LocalGroupMember -Group "Administrators" -Member $username
 }}
 
-# Activer RDP
+# Activer RDP (utile pour debug)
 Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server" -Name "fDenyTSConnections" -Value 0
-Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
 Set-Service -Name TermService -StartupType Automatic
-Start-Service TermService
+Start-Service TermService -ErrorAction SilentlyContinue
 
-Write-Host "✅ Windows Server configuré (FR + Admin + RDP)."
+Write-Host "✅ Windows configuré (FR + Admin + RDP)."
             """.strip()
+            provision_script = provision_script.replace("{vm_username}", vm_username).replace("{vm_password}", vm_password).replace("{root_password}", root_password).replace("{root_pass_snippet}", root_pass_snippet)
 
         else:
             box_name, memory, cpus, serial_console, provision_script = "generic/debian12", 2048, 2, False, ""
@@ -589,22 +724,40 @@ def halt_vm():
         # Arrêter websockify si actif
         stop_websockify(vm_name)
         
-        # Arrêter la VM
+        # Tentative d'arrêt propre d'abord
         result = subprocess.run(
             ['vagrant', 'halt', '--provider', 'libvirt'],
             cwd=vm_path,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=30  # Timeout réduit
         )
         
+        # Si l'arrêt propre échoue (Windows résiste souvent), forcer avec virsh
         if result.returncode != 0:
-            print(f"Erreur vagrant halt: {result.stderr}")
-            return jsonify({'message': f'Erreur lors de l\'arrêt : {result.stderr}'}), 500
+            print(f"Arrêt propre échoué, tentative d'arrêt forcé...")
+            domain_name = f"{vm_name}_default"
+            
+            # Forcer l'arrêt avec virsh destroy (équivalent à débrancher)
+            force_result = subprocess.run(
+                ['virsh', '-c', 'qemu:///system', 'destroy', domain_name],
+                capture_output=True,
+                text=True
+            )
+            
+            if force_result.returncode == 0:
+                return jsonify({'message': f'VM {vm_name} arrêtée (forcé).'}), 200
+            else:
+                print(f"Erreur virsh destroy: {force_result.stderr}")
+                return jsonify({'message': f'Erreur lors de l\'arrêt forcé : {force_result.stderr}'}), 500
         
         return jsonify({'message': f'VM {vm_name} arrêtée.'})
     except subprocess.TimeoutExpired:
-        return jsonify({'message': 'Timeout lors de l\'arrêt de la VM'}), 500
+        # Timeout atteint, forcer l'arrêt immédiatement
+        print(f"Timeout vagrant halt, arrêt forcé de {vm_name}...")
+        domain_name = f"{vm_name}_default"
+        subprocess.run(['virsh', '-c', 'qemu:///system', 'destroy', domain_name], check=False)
+        return jsonify({'message': f'VM {vm_name} arrêtée (forcé après timeout).'}), 200
     except Exception as e:
         print(f"Erreur halt_vm: {e}")
         return jsonify({'message': f'Erreur : {str(e)}'}), 500
@@ -625,13 +778,28 @@ def delete_vm():
         return jsonify({'message': 'VM introuvable ou accès refusé.'}), 403
     
     try:
-        subprocess.run(['vagrant', 'destroy', '-f', '--provider', 'libvirt'], cwd=vm_path, check=True)
+        subprocess.run(['vagrant', 'destroy', '-f'], cwd=vm_path, check=True)
         shutil.rmtree(vm_path)
         return jsonify({'message': f'VM {vm_name} supprimée.'})
-    except subprocess.CalledProcessError as e:
-        return jsonify({'message': f'Erreur suppression VM : {e}'}), 500
+        
+    except subprocess.TimeoutExpired:
+        # En cas de timeout, forcer quand même
+        print(f"Timeout lors de la suppression de {vm_name}, nettoyage forcé...")
+        subprocess.run(['virsh', '-c', 'qemu:///system', 'destroy', domain_name], check=False, capture_output=True)
+        subprocess.run(['virsh', '-c', 'qemu:///system', 'undefine', domain_name, '--remove-all-storage'], check=False, capture_output=True)
+        if vm_path.exists():
+            shutil.rmtree(vm_path)
+        return jsonify({'message': f'VM {vm_name} supprimée (forcé après timeout).'})
+        
     except Exception as e:
-        return jsonify({'message': f'Erreur suppression VM : {e}'}), 500
+        print(f"Erreur delete_vm: {e}")
+        # Même en cas d'erreur, essayer de nettoyer
+        try:
+            if vm_path.exists():
+                shutil.rmtree(vm_path)
+        except Exception as cleanup_err:
+            print(f"Erreur nettoyage final: {cleanup_err}")
+        return jsonify({'message': f'VM supprimée avec avertissements : {str(e)}'}), 200
 
 # -------------------- Lancer GUI (actuel: virt-viewer local) --------------------
 @app.route('/api/view_vm', methods=['POST'])
@@ -713,31 +881,19 @@ def start_websockify(vm_name, vnc_port):
     ws_port = find_free_port()
     if not ws_port:
         return None, None
-
-    # Localiser noVNC (inclut ~/.noVNC)
-    from pathlib import Path as _P
-    candidates = [
-        os.environ.get("NOVNC_WEB") or "",
-        "/usr/share/novnc",
-        "/usr/share/webapps/novnc",
-        "/usr/local/share/novnc",
-        str(_P.home() / "noVNC"),
-    ]
-    web_dir = next((p for p in candidates if p and os.path.isdir(p)), None)
-    if not web_dir:
-        print("noVNC introuvable. Installez 'novnc' ou définissez $NOVNC_WEB.")
-        return None, None
-
-    # binaire websockify ou fallback python -m websockify
-    ws_bin = shutil.which("websockify")
-    if ws_bin:
-        cmd = [ws_bin, "--web", web_dir, str(ws_port), f"127.0.0.1:{vnc_port}"]
-    else:
-        cmd = [sys.executable, "-m", "websockify", "--web", web_dir, str(ws_port), f"127.0.0.1:{vnc_port}"]
-
+    
     try:
+        # Lancer websockify
         process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp
+            [
+                'websockify',
+                '--web', '/usr/share/novnc',
+                f'{ws_port}',
+                f'127.0.0.1:{vnc_port}'
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setpgrp  # Créer un nouveau groupe de processus
         )
         websockify_processes[vm_name] = {'process': process, 'ws_port': ws_port, 'vnc_port': vnc_port}
         return ws_port, process
@@ -1061,6 +1217,20 @@ def ensure_libvirt_network():
         return True
     except Exception as e:
         print(f"[ensure_libvirt_network] {e}")
+        return False
+
+
+# -------------------- Vérifier la présence de Vagrant/libvirt provider --------------------
+def ensure_libvirt_provider():
+    """Vérifie rapidement si `vagrant` et `virsh` sont disponibles sur le système.
+    Retourne True si l'environnement semble prêt, False sinon.
+    """
+    try:
+        r1 = subprocess.run(['vagrant', '--version'], capture_output=True, text=True)
+        r2 = subprocess.run(['virsh', '--version'], capture_output=True, text=True)
+        return r1.returncode == 0 and r2.returncode == 0
+    except Exception as e:
+        print(f"[ensure_libvirt_provider] {e}")
         return False
 
 # -------------------- Lancement Flask --------------------
