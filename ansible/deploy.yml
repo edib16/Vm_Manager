@@ -36,6 +36,35 @@
       args:
         chdir: '{{ dest_path }}'
 
+    - name: Template .env.example from template
+      template:
+        src: 'templates/env.j2'
+        dest: '{{ dest_path }}/.env.example'
+      vars:
+        secret_key: '{{ lookup("env", "SECRET_KEY") | default("dev-secret-change-me") }}'
+
+    - name: Deploy systemd unit from template
+      template:
+        src: 'templates/vm_manager.service.j2'
+        dest: '/etc/systemd/system/vm_manager.service'
+        owner: root
+        group: root
+        mode: '0644'
+      vars:
+        dest_path: '{{ dest_path }}'
+        service_user: '{{ service_user }}'
+        venv_dir: '{{ dest_path }}/.venv'
+        secret_key: '{{ lookup("env", "SECRET_KEY") | default("dev-secret-change-me") }}'
+        gunicorn_workers: 3
+        gunicorn_port: 5000
+
+    - name: Reload systemd and restart vm_manager.service
+      systemd:
+        name: vm_manager.service
+        daemon_reload: yes
+        state: restarted
+
+
     - name: Build frontend Docker image
       command: 'docker build -t {{ frontend_image }} .'
       args:

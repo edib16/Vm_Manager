@@ -1,0 +1,21 @@
+[Unit]
+Description=VM_Manager Flask application (VM Manager)
+After=network.target
+
+[Service]
+Type=simple
+# Exécuter sous l'utilisateur configuré
+User={{ service_user }}
+Group={{ service_user }}
+WorkingDirectory={{ dest_path }}/backend
+Environment=FLASK_ENV=production
+Environment=SECRET_KEY={{ secret_key | default('dev-secret-change-me') }}
+
+# Lancer gunicorn depuis le virtualenv
+ExecStart=/bin/bash -lc 'if [ -f "{{ venv_dir }}/bin/activate" ]; then . "{{ venv_dir }}/bin/activate"; fi; cd "{{ dest_path }}/backend" && exec "{{ venv_dir }}/bin/gunicorn" --workers {{ gunicorn_workers | default(3) }} --bind 0.0.0.0:{{ gunicorn_port | default(5000) }} main:app'
+
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
