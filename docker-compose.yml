@@ -1,16 +1,20 @@
-version: "3.8"
-
 services:
   backend:
     build: ./backend
     container_name: vm_manager_backend
     restart: unless-stopped
+    privileged: true
     environment:
       - PYTHONUNBUFFERED=1
       - FLASK_ENV=development
+      - VAGRANT_HOME=/home/edib/.vagrant.d
     volumes:
       - ./backend:/app
       - ./student_vms:/app/student_vms
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
+      - /usr/bin/vagrant:/usr/bin/vagrant:ro
+      - /opt/vagrant:/opt/vagrant:ro
+      - /home/edib/.vagrant.d:/home/edib/.vagrant.d
     networks:
       - vm_manager_net
 

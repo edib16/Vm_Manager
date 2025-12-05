@@ -1,0 +1,44 @@
+# Configuration Traefik dynamique pour VM_Manager
+# À placer dans /etc/traefik/dynamic/ ou le répertoire de config dynamique de Traefik
+
+http:
+  routers:
+    vm-manager:
+      rule: "Host(`vm-manager.iris.a3n.fr`)"
+      service: vm-manager
+      entryPoints:
+        - web
+        - websecure
+      tls:
+        certResolver: letsencrypt
+    
+    # Route spécifique pour WebSocket noVNC
+    vm-manager-websocket:
+      rule: "Host(`vm-manager.iris.a3n.fr`) && PathPrefix(`/websockify`)"
+      service: vm-manager-websocket
+      entryPoints:
+        - web
+        - websecure
+      tls:
+        certResolver: letsencrypt
+  
+  services:
+    vm-manager:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:5000"
+        passHostHeader: true
+    
+    vm-manager-websocket:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:6080"
+        passHostHeader: true
+
+  middlewares:
+    # Optionnel : headers de sécurité
+    vm-manager-headers:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: "SAMEORIGIN"
+          X-Content-Type-Options: "nosniff"

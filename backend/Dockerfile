@@ -2,11 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for libvirt-python
+# Install system dependencies for libvirt-python only
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libvirt-dev \
     gcc \
+    libvirt-clients \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
