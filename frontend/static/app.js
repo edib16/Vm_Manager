@@ -259,11 +259,18 @@ document.addEventListener("DOMContentLoaded", () => {
         showLoader("Création de la VM en cours... Cela peut prendre quelques minutes."); // ← AJOUT
 
         try {
+            // Timeout de 5 minutes pour la création de VM
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+            
             const res = await fetch("/api/create_vm", {
                 method: "POST",
                 headers: {"Content-Type":"application/json"},
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             const data = await res.json();
             logMessage(data.message, res.ok ? "success" : "error");
             if (res.ok) {
@@ -292,7 +299,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch(err) {
             console.error(err);
-            logMessage("Erreur création","error");
+            if (err.name === 'AbortError') {
+                logMessage("⚠️ Timeout atteint. La VM continue de se créer en arrière-plan. Actualisez dans quelques instants.", "warning");
+            } else {
+                logMessage("Erreur création","error");
+            }
         } finally {
             hideLoader(); // ← AJOUT
             confirmCreateBtn.disabled = false;

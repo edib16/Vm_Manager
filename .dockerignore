@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+DEPLOYMENT_NATIVE.md
+
+# Student data
+student_vms/
+
+# Déploiement natif
+deploy-native.sh
+vm_manager.service
+
+# Environnement
+.env
+.env.example
+
+# Docker compose pour production
+docker-compose.traefik.yml
+traefik-config.yml

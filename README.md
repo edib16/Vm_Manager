@@ -25,7 +25,10 @@
 
 ## ✨ Fonctionnalités
 
-- ✅ **Création de VMs** : Debian 12 (client/serveur) et Windows Server 2022
+- ✅ **Création de VMs asynchrone** : Debian 12 (client/serveur) et Windows Server 2022
+  - Interface réactive : retour immédiat pendant la création
+  - Actualisation automatique toutes les 5 secondes
+  - Suivi des logs en temps réel via journalctl
 - ✅ **Gestion complète** : Démarrer, arrêter, supprimer les VMs
 - ✅ **Console VNC intégrée** : Accès graphique direct via noVNC dans le navigateur
 - ✅ **Isolation multi-utilisateurs** : Chaque étudiant gère uniquement ses VMs
@@ -189,12 +192,12 @@ ssh -i ~/.ssh/mediaschool edib@37.64.159.66 -p 2222
 
 ```bash
 # Première installation
-cd /home/iris/sisr
-git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git vm_manager
-cd vm_manager
+cd ~
+git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git Vm_Manager
+cd Vm_Manager
 
 # OU mise à jour
-cd /home/iris/sisr/vm_manager
+cd ~/Vm_Manager
 git pull origin main
 ```
 
@@ -211,7 +214,17 @@ Le script va automatiquement :
 - ✅ Configurer le service systemd
 - ✅ Démarrer l'application
 
-#### 4. Configurer Traefik
+#### 4. Installer noVNC
+
+```bash
+# Sur Debian/Ubuntu
+sudo apt install novnc
+
+# Sur Arch Linux
+sudo git clone https://github.com/novnc/noVNC /usr/share/novnc
+```
+
+#### 5. Configurer Traefik
 
 ```bash
 # Copier la configuration Traefik
@@ -221,7 +234,7 @@ sudo cp traefik-config.yml /etc/traefik/dynamic/vm_manager.yml
 docker restart traefik  # Si Traefik est en Docker
 ```
 
-#### 5. Configurer l'environnement
+#### 6. Configurer l'environnement
 
 ```bash
 # Éditer le fichier .env avec vos vraies valeurs
@@ -231,7 +244,22 @@ nano .env
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-#### 6. Vérifier le déploiement
+#### 7. Configurer les permissions sudo (requis)
+
+```bash
+# Ajouter l'utilisateur au groupe libvirt
+sudo usermod -aG libvirt iris
+
+# Permettre à libvirt d'utiliser sudo sans mot de passe pour Vagrant
+echo '%libvirt ALL=(root) NOPASSWD: /usr/bin/virsh, /usr/bin/qemu-system-x86_64' | sudo tee /etc/sudoers.d/vagrant-libvirt
+sudo chmod 440 /etc/sudoers.d/vagrant-libvirt
+
+# Démarrer le réseau libvirt par défaut
+sudo virsh net-start default
+sudo virsh net-autostart default
+```
+
+#### 8. Vérifier le déploiement
 
 ```bash
 # Statut du service
@@ -244,7 +272,7 @@ sudo journalctl -u vm_manager.service -f
 curl http://localhost:5000/api/vms
 ```
 
-#### 7. Accéder à l'application
+#### 9. Accéder à l'application
 
 **URL** : https://vm-manager.iris.a3n.fr
 

@@ -25,9 +25,9 @@ ssh -i ~/.ssh/mediaschool edib@37.64.159.66 -p 2222
 ### 2. Cloner le projet
 
 ```bash
-cd /home/iris/sisr
-git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git vm_manager
-cd vm_manager
+cd ~
+git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git Vm_Manager
+cd Vm_Manager
 ```
 
 ### 3. Exécuter le script de déploiement
@@ -43,7 +43,35 @@ Le script va automatiquement :
 - ✅ Configurer le service systemd
 - ✅ Démarrer l'application
 
-### 4. Configurer Traefik
+### 4. Installer noVNC
+
+```bash
+# Sur Debian/Ubuntu
+sudo apt install novnc
+
+# Si pas disponible, cloner depuis GitHub
+sudo git clone https://github.com/novnc/noVNC /usr/share/novnc
+```
+
+### 5. Configurer les permissions libvirt
+
+```bash
+# Ajouter l'utilisateur au groupe libvirt
+sudo usermod -aG libvirt iris
+
+# Configurer sudo NOPASSWD pour Vagrant (requis pour systemd)
+echo '%libvirt ALL=(root) NOPASSWD: /usr/bin/virsh, /usr/bin/qemu-system-x86_64' | sudo tee /etc/sudoers.d/vagrant-libvirt
+sudo chmod 440 /etc/sudoers.d/vagrant-libvirt
+
+# Démarrer le réseau libvirt
+sudo virsh net-start default 2>/dev/null || true
+sudo virsh net-autostart default
+
+# Se reconnecter pour appliquer le groupe (ou continuer)
+newgrp libvirt
+```
+
+### 6. Configurer Traefik
 
 #### Option A : Configuration dynamique (recommandé)
 
@@ -73,10 +101,10 @@ docker run -d \
   alpine sleep infinity
 ```
 
-### 5. Configurer l'environnement
+### 7. Configurer l'environnement
 
 ```bash
-cd /home/iris/sisr/vm_manager
+cd ~/Vm_Manager
 
 # Éditer le fichier .env avec vos vraies valeurs
 nano .env
@@ -85,7 +113,7 @@ nano .env
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-### 6. Vérifier le fonctionnement
+### 8. Vérifier le fonctionnement
 
 ```bash
 # Statut du service

@@ -654,8 +654,14 @@ Vagrant.configure("2") do |config|
         if not ensure_box_installed(box_name, provider="libvirt"):
             return jsonify({'message': f"Box introuvable: {box_name}. Installez-la d'abord:\n  vagrant box add {box_name} --provider libvirt"}), 400
 
-        # Lancement
-        subprocess.run(['vagrant', 'up', '--provider', 'libvirt'], cwd=vmdir, check=True)
+        # Lancement ASYNCHRONE en arrière-plan
+        subprocess.Popen(
+            ['vagrant', 'up', '--provider', 'libvirt'],
+            cwd=vmdir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setpgrp
+        )
 
         vm_description = ""
         if os_name == "debian" and vm_type == "client":
@@ -663,7 +669,7 @@ Vagrant.configure("2") do |config|
         elif os_name == "debian" and vm_type == "serveur":
             vm_description = f" (utilisateur: {vm_username}, console texte)"
 
-        return jsonify({'message': f'VM {vm_name} créée{vm_description}.', 'vm_name': vm_name})
+        return jsonify({'message': f'VM {vm_name} en cours de création{vm_description}. Actualisez dans quelques minutes.', 'vm_name': vm_name})
 
     except subprocess.CalledProcessError as e:
         if vmdir.exists():
