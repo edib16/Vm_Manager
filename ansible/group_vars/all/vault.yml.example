@@ -1,8 +1,0 @@
-# Exemple de fichier de variables sensibles pour Ansible
-# Ne pas committer de secrets en clair : utilisez ansible-vault pour chiffrer ce fichier
-
-# Clé secrète Flask
-secret_key: "change_me_super_secret"
-
-# Exemples LDAP (si utilisés)
-# ldap_bind_password: "ldap_password_here"

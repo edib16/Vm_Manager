@@ -1,102 +1,442 @@
-# VM_Manager
+# VM_Manager 🖥️
 
-VM_Manager est une interface web pour gérer des machines virtuelles étudiantes (création via Vagrant/libvirt, gestion via libvirt/virsh et accès via noVNC).
+**Gestionnaire de machines virtuelles étudiantes** - Interface web pour la création et la gestion de VMs via Vagrant/libvirt avec accès console VNC intégré.
 
-## 🚀 Déploiement sur le serveur iris.a3n.fr
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/Python-3.11-green)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-Le projet est déployé sur `vm-manager.iris.a3n.fr` via **Docker Compose** et **Traefik**.
+---
 
-### Accès
-- **Application** : http://vm-manager.iris.a3n.fr
+## 📋 Table des matières
 
-### Architecture de déploiement
+- [Fonctionnalités](#-fonctionnalités)
+- [Architecture](#-architecture)
+- [Prérequis](#-prérequis)
+- [Installation](#-installation)
+  - [Développement Local](#développement-local)
+  - [Production (Serveur)](#production-serveur)
+- [Utilisation](#-utilisation)
+- [Configuration](#-configuration)
+- [Structure du Projet](#-structure-du-projet)
+- [Technologies](#-technologies)
+
+---
+
+## ✨ Fonctionnalités
+
+- ✅ **Création de VMs** : Debian 12 (client/serveur) et Windows Server 2022
+- ✅ **Gestion complète** : Démarrer, arrêter, supprimer les VMs
+- ✅ **Console VNC intégrée** : Accès graphique direct via noVNC dans le navigateur
+- ✅ **Isolation multi-utilisateurs** : Chaque étudiant gère uniquement ses VMs
+- ✅ **Interface moderne** : Design responsive avec animations
+- ✅ **Configuration automatisée** : Clavier français, locale FR, utilisateurs préconfigurés
+
+---
+
+## 🏗️ Architecture
+
+### Architecture de Déploiement (Production)
 
 ```
-┌─────────────────────────────────────┐
-│   Traefik (reverse proxy)           │
-│         admin_proxy network         │
-└────────────┬────────────────────────┘
-             │ HTTP
-             ▼
-       ┌─────────────┐
-       │  Frontend   │
-       │   (nginx)   │  /api/* ──────┐
-       │   Port 80   │               │
-       └─────────────┘               │ proxy_pass
-                                     ▼
-                            ┌─────────────────┐
-                            │     Backend     │
-                            │ (Flask/Gunicorn)│
-                            │    Port 5000    │
-                            └─────────────────┘
+Internet
+   │
+   ▼
+┌────────────────────────────────────┐
+│   Traefik (Reverse Proxy)          │
+│   vm-manager.iris.a3n.fr           │
+│   Certificat SSL Let's Encrypt     │
+└──────────────┬─────────────────────┘
+               │ HTTPS
+               ▼
+      ┌─────────────────┐
+      │     Backend     │
+      │ Flask/Gunicorn  │
+      │   Port 5000     │
+      │  (non exposé)   │
+      └────────┬────────┘
+               │
+        APIs REST /api/*
+               │
+               ▼
+      ┌─────────────────┐
+      │  Vagrant/libvirt│
+      │  Gestion des VMs│
+      └─────────────────┘
 ```
 
 **Communication** :
-- Traefik route `vm-manager.iris.a3n.fr` vers le conteneur nginx (frontend)
-- nginx sert les fichiers statiques (HTML/CSS/JS)
-- nginx proxifie `/api/*` vers le backend Flask (communication interne Docker)
-- Le backend n'est pas exposé publiquement
+- **Traefik** : Reverse proxy centralisé, gestion SSL automatique
+- **Backend** : API Flask exposée uniquement via Traefik
+- **VMs** : Créées et gérées via Vagrant + libvirt/KVM
 
-## 📁 Structure du projet
+### Architecture de Développement (Local)
 
 ```
-├── backend/              # Backend Flask
-│   ├── main.py          # Application principale
-│   ├── config.py        # Configuration
-│   ├── requirements.txt # Dépendances Python
-│   └── Dockerfile       # Image Docker backend
-├── frontend/            # Frontend statique
-│   ├── index.html       # Page principale
-│   ├── static/          # CSS & JS
-│   └── Dockerfile       # Image Docker frontend
-├── ansible/             # Playbooks Ansible (documentation)
-│   ├── deploy.yml       # Playbook de déploiement
-│   ├── inventory.ini    # Inventaire des serveurs
-│   └── templates/       # Templates systemd
-├── noVNC/              # Client noVNC pour consoles VNC
-├── student_vms/        # VMs étudiantes (créées automatiquement)
-├── docker-compose.traefik.yml  # Configuration Docker Compose
-├── .env                # Variables d'environnement
-└── README.md           # Ce fichier
+localhost:8080
+      │
+      ▼
+┌─────────────┐
+│   nginx     │  Reverse Proxy
+│  (frontend) │  + Fichiers statiques
+└─────┬───────┘
+      │ /api/* → proxy_pass
+      ▼
+┌─────────────┐
+│   Backend   │
+│ Flask:5000  │
+│  (interne)  │
+└─────────────┘
 ```
 
-## 🐳 Déploiement Docker Compose (Production)
+---
 
-### Sur le serveur
+## 🔧 Prérequis
 
-Le projet est déployé dans `/home/iris/sisr/vm_manager/`.
+### Serveur (Production)
+- Ubuntu 22.04+ / Debian 12+
+- Docker + Docker Compose
+- Traefik (déjà configuré)
+- KVM/QEMU + libvirt
+- Vagrant avec plugin libvirt
 
-#### Démarrer les conteneurs
+### Local (Développement)
+- Docker + Docker Compose
+- KVM/QEMU + libvirt
+- Vagrant avec plugin libvirt
+- Git
+
+---
+
+## 🚀 Installation
+
+### Développement Local
+
+#### 1. Cloner le projet
+
+```bash
+git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git
+cd edib_ansible/Vm_Manager
+```
+
+#### 2. Configurer l'environnement
+
+```bash
+# Copier le fichier d'environnement
+cp .env.example .env
+
+# Éditer les variables si nécessaire
+nano .env
+```
+
+#### 3. Démarrer les conteneurs
+
+```bash
+docker-compose up -d --build
+```
+
+#### 4. Accéder à l'application
+
+Ouvrir dans le navigateur : **http://localhost:8080**
+
+**Identifiants de test** :
+- Utilisateur : `alice` / Mot de passe : `test`
+- Admin : `admin` / Mot de passe : `test`
+
+#### 5. Arrêter les conteneurs
+
+```bash
+docker-compose down
+```
+
+---
+
+### Production (Serveur)
+
+#### 1. Se connecter au serveur
+
+```bash
+ssh -i ~/.ssh/mediaschool edib@37.64.159.66 -p 2222
+```
+
+#### 2. Naviguer vers le projet
 
 ```bash
 cd /home/iris/sisr/vm_manager
+```
+
+#### 3. Mettre à jour le code
+
+```bash
+git pull origin main
+```
+
+#### 4. Déployer avec Traefik
+
+```bash
 docker-compose -f docker-compose.traefik.yml up -d --build
 ```
 
-#### Arrêter les conteneurs
+#### 5. Vérifier le déploiement
 
 ```bash
-docker-compose -f docker-compose.traefik.yml down
-```
+# Voir les conteneurs
+docker ps | grep vm_manager
 
-#### Voir les logs
-
-```bash
+# Voir les logs
 docker-compose -f docker-compose.traefik.yml logs -f
-# ou pour un service spécifique
-docker logs vm_manager_backend -f
-docker logs vm_manager_frontend -f
 ```
 
-#### Redéployer après modification
+#### 6. Accéder à l'application
+
+**URL** : https://vm-manager.iris.a3n.fr
+
+---
+
+## 📖 Utilisation
+
+### Créer une VM
+
+1. Se connecter avec ses identifiants
+2. Cliquer sur **"Créer une nouvelle VM"**
+3. Remplir le formulaire :
+   - **Nom** : Nom unique de la VM
+   - **Type** : Client (GUI) ou Serveur (CLI)
+   - **OS** : Debian 12 ou Windows Server 2022
+   - **Utilisateur/Mot de passe** : Identifiants de la VM
+   - **Mot de passe root** : (Debian uniquement)
+4. Cliquer sur **"Créer"**
+
+⏱️ La création prend 5-15 minutes selon le type de VM.
+
+### Gérer une VM
+
+- **▶️ Démarrer** : Lance la VM
+- **⏸️ Arrêter** : Arrête proprement la VM
+- **🖥️ Console VNC** : Ouvre la console graphique dans le navigateur
+- **🗑️ Supprimer** : Supprime définitivement la VM
+
+### Console VNC
+
+La console VNC s'ouvre dans un nouvel onglet avec :
+- Redimensionnement automatique
+- Clavier AZERTY configuré
+- Presse-papier partagé
+- Mode plein écran disponible
+
+---
+
+## ⚙️ Configuration
+
+### Variables d'environnement (.env)
 
 ```bash
-cd /home/iris/sisr/vm_manager
-git pull
+# Clé secrète Flask (générer avec: python -c "import secrets; print(secrets.token_hex(32))")
+SECRET_KEY=votre_clé_secrète_ici
+
+# Configuration LDAP (pour authentification production)
+LDAP_HOST=ldap://localhost:389
+LDAP_BASE_DN=dc=example,dc=com
+LDAP_USER_DN=ou=users,dc=example,dc=com
+LDAP_GROUP_DN=ou=groups,dc=example,dc=com
+
+# Email (pour demandes d'augmentation de capacité)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=noreply@example.com
+SMTP_PASSWORD=votre_mot_de_passe
+SMTP_FROM=VM Manager <noreply@example.com>
+ADMIN_EMAILS=admin@example.com
+```
+
+### Utilisateurs de test (backend/test_auth.py)
+
+En mode développement, les utilisateurs suivants sont disponibles :
+
+```python
+TEST_USERS = {
+    "alice": "test",    # Utilisateur standard
+    "bob": "test",      # Utilisateur standard
+    "admin": "test"     # Administrateur
+}
+```
+
+---
+
+## 📁 Structure du Projet
+
+```
+Vm_Manager/
+├── backend/                      # Backend Flask
+│   ├── main.py                   # Application principale (API REST)
+│   ├── config.py                 # Configuration LDAP/Email
+│   ├── test_auth.py              # Authentification de test
+│   ├── requirements.txt          # Dépendances Python
+│   └── Dockerfile                # Image Docker backend
+│
+├── frontend/                     # Frontend statique
+│   ├── index.html                # Page principale SPA
+│   ├── nginx.conf                # Configuration nginx (dev)
+│   ├── Dockerfile                # Image Docker nginx (dev)
+│   └── static/
+│       ├── app.js                # Logique JavaScript
+│       └── styles.css            # Styles CSS
+│
+├── noVNC/                        # Client noVNC (console VNC web)
+│
+├── docker-compose.yml            # Docker Compose (développement local)
+├── docker-compose.traefik.yml    # Docker Compose (production avec Traefik)
+├── .env                          # Variables d'environnement
+├── .gitignore                    # Fichiers ignorés par Git
+└── README.md                     # Ce fichier
+```
+
+---
+
+## 🛠️ Technologies
+
+### Backend
+- **Python 3.11** - Langage de programmation
+- **Flask** - Framework web
+- **Gunicorn** - Serveur WSGI production
+- **libvirt-python** - Interaction avec libvirt
+- **flask-login** - Gestion des sessions
+- **flask-ldap3-login** - Authentification LDAP
+
+### Frontend
+- **HTML5/CSS3/JavaScript** - Technologies web standard
+- **noVNC** - Console VNC dans le navigateur
+
+### Infrastructure
+- **Docker** - Conteneurisation
+- **Docker Compose** - Orchestration multi-conteneurs
+- **nginx** - Serveur web / Reverse proxy (dev)
+- **Traefik** - Reverse proxy / Load balancer (prod)
+
+### Virtualisation
+- **KVM/QEMU** - Hyperviseur type 1
+- **libvirt** - API de gestion de VMs
+- **Vagrant** - Automatisation de la création de VMs
+- **vagrant-libvirt** - Plugin Vagrant pour libvirt
+
+---
+
+## 📝 Commandes Utiles
+
+### Docker Compose (Développement)
+
+```bash
+# Démarrer
+docker-compose up -d --build
+
+# Arrêter
+docker-compose down
+
+# Logs
+docker-compose logs -f
+
+# Rebuild sans cache
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### Docker Compose (Production)
+
+```bash
+# Démarrer
+docker-compose -f docker-compose.traefik.yml up -d --build
+
+# Arrêter
+docker-compose -f docker-compose.traefik.yml down
+
+# Logs
+docker-compose -f docker-compose.traefik.yml logs -f backend
+
+# Redéployer après modification
+git pull origin main
 docker-compose -f docker-compose.traefik.yml up -d --build
 ```
 
-#### Vérifier l'état des conteneurs
+### Vagrant (Debug)
+
+```bash
+# Lister les VMs Vagrant
+vagrant global-status
+
+# Supprimer une VM orpheline
+vagrant destroy <vm_id> -f
+
+# Nettoyer les entrées invalides
+vagrant global-status --prune
+```
+
+### Libvirt (Debug)
+
+```bash
+# Lister les VMs
+virsh -c qemu:///system list --all
+
+# État d'une VM
+virsh -c qemu:///system domstate <vm_name>_default
+
+# Arrêter une VM
+virsh -c qemu:///system destroy <vm_name>_default
+
+# Supprimer une VM
+virsh -c qemu:///system undefine <vm_name>_default --remove-all-storage
+```
+
+---
+
+## 🐛 Dépannage
+
+### La VM ne démarre pas
+
+1. Vérifier que KVM est activé : `lsmod | grep kvm`
+2. Vérifier que libvirt est actif : `systemctl status libvirtd`
+3. Vérifier le réseau libvirt : `virsh net-list --all`
+
+### Erreur "Permission denied" Docker
+
+```bash
+# Ajouter l'utilisateur au groupe docker
+sudo usermod -aG docker $USER
+
+# Redémarrer la session
+newgrp docker
+```
+
+### Le backend ne communique pas avec libvirt
+
+Vérifier que le conteneur backend a accès au socket libvirt :
+
+```bash
+docker exec vm_manager_backend virsh -c qemu:///system list
+```
+
+---
+
+## 👨‍💻 Auteur
+
+**Edib** - Projet réalisé dans le cadre du BTS SISR 2025
+
+**Établissement** : Mediaschool
+
+---
+
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+
+---
+
+## 🔗 Liens Utiles
+
+- [Documentation Flask](https://flask.palletsprojects.com/)
+- [Documentation Vagrant](https://www.vagrantup.com/docs)
+- [Documentation libvirt](https://libvirt.org/docs.html)
+- [Documentation noVNC](https://github.com/novnc/noVNC)
+- [Documentation Traefik](https://doc.traefik.io/traefik/)
 
 ```bash
 docker ps --filter name=vm_manager
