@@ -36,39 +36,61 @@
 
 ## 🏗️ Architecture
 
-### Architecture de Déploiement (Production)
+### Architecture de Déploiement (Production - Mode Natif)
 
 ```
 Internet
    │
    ▼
-┌────────────────────────────────────┐
-│   Traefik (Reverse Proxy)          │
-│   vm-manager.iris.a3n.fr           │
-│   Certificat SSL Let's Encrypt     │
-└──────────────┬─────────────────────┘
-               │ HTTPS
+┌────────────────────────────────────────┐
+│   Traefik (Reverse Proxy)              │
+│   vm-manager.iris.a3n.fr               │
+│   ✅ SSL/TLS automatique (Let's Encrypt)│
+└──────────────┬─────────────────────────┘
+               │ HTTP (localhost:5000)
                ▼
-      ┌─────────────────┐
-      │     Backend     │
-      │ Flask/Gunicorn  │
-      │   Port 5000     │
-      │  (non exposé)   │
-      └────────┬────────┘
-               │
-        APIs REST /api/*
-               │
+┌────────────────────────────────────────┐
+│   Flask + Gunicorn (Natif)             │
+│   • systemd service                    │
+│   • Python virtualenv                  │
+│   • User: iris (non-root)              │
+│   • Bind: 127.0.0.1:5000               │
+└──────────────┬─────────────────────────┘
+               │ Appels système
                ▼
-      ┌─────────────────┐
-      │  Vagrant/libvirt│
-      │  Gestion des VMs│
-      └─────────────────┘
+┌────────────────────────────────────────┐
+│   Vagrant + Plugin libvirt             │
+│   • Orchestration VMs                  │
+│   • Génération Vagrantfile             │
+└──────────────┬─────────────────────────┘
+               │ qemu:///system
+               ▼
+┌────────────────────────────────────────┐
+│   Libvirt (API virtualisation)         │
+│   • Gestion domaines (VMs)             │
+│   • Réseau NAT (virbr0)                │
+│   • Ports VNC                          │
+└──────────────┬─────────────────────────┘
+               │ Hyperviseur
+               ▼
+┌────────────────────────────────────────┐
+│   KVM/QEMU (Accès direct matériel)    │
+│   ⚡ Performance maximale                │
+│   ❌ Pas de virtualisation imbriquée    │
+│                                        │
+│   ┌────────┐ ┌────────┐ ┌────────┐   │
+│   │ VM 1   │ │ VM 2   │ │ VM 3   │   │
+│   │ Debian │ │Windows │ │ Debian │   │
+│   └────────┘ └────────┘ └────────┘   │
+└────────────────────────────────────────┘
 ```
 
-**Communication** :
-- **Traefik** : Reverse proxy centralisé, gestion SSL automatique
-- **Backend** : API Flask exposée uniquement via Traefik
-- **VMs** : Créées et gérées via Vagrant + libvirt/KVM
+**Avantages Mode Natif** :
+- ⚡ **Performance maximale** : Pas d'overhead Docker
+- ✅ **Architecture simplifiée** : Pas de virtualisation imbriquée
+- 🔧 **Maintenance facile** : `git pull` + `systemctl restart`
+- 📊 **Logs unifiés** : `journalctl` intégré
+- 🔒 **Sécurité** : Service sous utilisateur non-root
 
 ### Architecture de Développement (Local)
 
@@ -110,7 +132,9 @@ localhost:8080
 
 ## 🚀 Installation
 
-### Développement Local
+### Développement Local (Docker)
+
+> ⚠️ **Note** : Le mode Docker est **uniquement pour le développement local**. En production, utilisez le déploiement natif.
 
 #### 1. Cloner le projet
 
@@ -151,7 +175,9 @@ docker-compose down
 
 ---
 
-### Production (Serveur)
+### Production (Serveur) - Mode Natif ⚡
+
+> ✅ **Recommandé** : Déploiement natif pour performance maximale et architecture simplifiée.
 
 #### 1. Se connecter au serveur
 
@@ -159,37 +185,74 @@ docker-compose down
 ssh -i ~/.ssh/mediaschool edib@37.64.159.66 -p 2222
 ```
 
-#### 2. Naviguer vers le projet
+#### 2. Cloner ou mettre à jour le projet
 
 ```bash
+# Première installation
+cd /home/iris/sisr
+git clone https://github.com/Mediaschool-BTS-SISR-2025/edib_ansible.git vm_manager
+cd vm_manager
+
+# OU mise à jour
 cd /home/iris/sisr/vm_manager
-```
-
-#### 3. Mettre à jour le code
-
-```bash
 git pull origin main
 ```
 
-#### 4. Déployer avec Traefik
+#### 3. Exécuter le script de déploiement
 
 ```bash
-docker-compose -f docker-compose.traefik.yml up -d --build
+chmod +x deploy-native.sh
+./deploy-native.sh
 ```
 
-#### 5. Vérifier le déploiement
+Le script va automatiquement :
+- ✅ Créer le virtualenv Python
+- ✅ Installer les dépendances (Flask, Gunicorn, libvirt-python, etc.)
+- ✅ Configurer le service systemd
+- ✅ Démarrer l'application
+
+#### 4. Configurer Traefik
 
 ```bash
-# Voir les conteneurs
-docker ps | grep vm_manager
+# Copier la configuration Traefik
+sudo cp traefik-config.yml /etc/traefik/dynamic/vm_manager.yml
 
-# Voir les logs
-docker-compose -f docker-compose.traefik.yml logs -f
+# Recharger Traefik (si nécessaire)
+docker restart traefik  # Si Traefik est en Docker
 ```
 
-#### 6. Accéder à l'application
+#### 5. Configurer l'environnement
+
+```bash
+# Éditer le fichier .env avec vos vraies valeurs
+nano .env
+
+# Générer une SECRET_KEY sécurisée
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+#### 6. Vérifier le déploiement
+
+```bash
+# Statut du service
+sudo systemctl status vm_manager.service
+
+# Logs en temps réel
+sudo journalctl -u vm_manager.service -f
+
+# Test local
+curl http://localhost:5000/api/vms
+```
+
+#### 7. Accéder à l'application
 
 **URL** : https://vm-manager.iris.a3n.fr
+
+---
+
+### 📋 Documentation Complète
+
+Pour plus de détails sur le déploiement natif, consultez [DEPLOYMENT_NATIVE.md](DEPLOYMENT_NATIVE.md)
 
 ---
 
