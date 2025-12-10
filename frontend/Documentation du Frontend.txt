@@ -1,0 +1,30 @@
+﻿📝 1. Documentation du Frontend : vm_manager_frontend (Nginx)
+🚀 Objectif et Rôle
+Le Frontend est le point d'entrée unique de l'application et sert de couche de présentation à l'utilisateur. Son rôle est strictement limité à la diffusion de contenu statique et à l'établissement de la communication interactive.
+* Fonction principale : Servir l'interface utilisateur (HTML, CSS, JavaScript).
+* Fonction secondaire : Établir la connexion WebSocket pour la console VM (noVNC).
+🛠️ Technologies Utilisées
+Catégorie
+	Technologie
+	Rôle dans le Frontend
+	Serveur
+	Nginx
+	Serveur web ultra-rapide pour distribuer les fichiers statiques de l'interface. C'est l'outil idéal pour sa légèreté et sa gestion efficace des connexions.
+	Base
+	HTML5, CSS3, JavaScript
+	Langages standards de l'interface utilisateur.
+	Console VM
+	noVNC
+	Bibliothèque JavaScript qui permet de visualiser et interagir avec l'écran de la machine virtuelle directement dans le navigateur.
+	Base Docker
+	Image nginx:latest (ou similaire)
+	Conteneur léger et optimisé pour le service de fichiers statiques.
+	📦 Dockerisation et Architecture Microservices
+Pourquoi un conteneur séparé pour le Frontend ?
+1. Isolation des préoccupations : Le Frontend ne contient aucune logique métier sensible ni les outils de gestion des VMs. Cela le rend plus simple, plus sûr, et plus rapide à démarrer.
+2. Légèreté : Le conteneur Nginx est extrêmement petit et léger, optimisé pour la diffusion de fichiers.
+3. Mise à l'échelle (Scalabilité) : En cas de forte affluence sur l'interface, on pourrait facilement multiplier les instances du Frontend sans impacter le Backend, qui est plus lourd et gère les ressources KVM.
+Rôle dans l'Orchestration (Docker Compose & Traefik)
+Le docker-compose.yml configure le Frontend pour être le gestionnaire de l'adresse principale :
+* Règle Traefik : Le label traefik.http.routers.vm_front.rule=Host(\vm-manager.iris.a3n.fr`)` garantit que toutes les requêtes arrivant sur le nom de domaine sont dirigées par défaut vers le conteneur Nginx.
+* Route des API : Nginx sait ensuite, grâce à la configuration de Traefik (non visible ici mais implicite), rediriger les requêtes spécifiques (/api/...) vers le conteneur Backend.

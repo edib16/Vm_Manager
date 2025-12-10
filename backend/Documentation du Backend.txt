@@ -1,0 +1,33 @@
+﻿📝 2. Documentation du Backend : vm_manager_backend (Python/Vagrant)
+🧠 Objectif et Rôle
+Le Backend est le cerveau de l'application. Il contient toute la logique métier, gère les interactions avec l'infrastructure de virtualisation (KVM) et expose une API pour le Frontend.
+* Fonction principale : Exécuter les commandes de création, suppression, démarrage et arrêt des machines virtuelles.
+* Fonction critique : Interagir avec le socket KVM de l'hôte (libvirt-sock).
+🛠️ Technologies Utilisées
+Catégorie
+	Technologie
+	Rôle dans le Backend
+	Langage
+	Python (Flask)
+	Utilisé pour développer l'API RESTful qui communique avec le Frontend et exécute les commandes système.
+	Serveur Web
+	Gunicorn
+	Serveur d'applications Python pour exposer l'application Flask sur le port interne 5000.
+	Orchestration VM
+	Vagrant
+	Outil de haut niveau utilisé pour la définition, la configuration, et le provisionnement des machines virtuelles (simplifie la gestion des Box, des réseaux, etc.).
+	Hyperviseur
+	Libvirt (via socket)
+	Bibliothèque et outils qui communiquent directement avec l'hyperviseur KVM du serveur hôte pour le contrôle des ressources.
+	Outils de Compilation
+	gcc, make, libvirt-clients
+	Dépendances nécessaires à l'intérieur du conteneur pour compiler les bindings Python/Ruby (Gems) et fournir l'outil virsh.
+	📦 Dockerisation et Architecture Microservices
+Architecture Critique : L'Accès au Socket Libvirt
+Le déploiement du Backend est le plus délicat en raison de la nécessité d'interagir avec l'hôte :
+* Montage du Volume : La ligne volumes: - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock est critique. Elle monte le socket KVM du serveur hôte directement dans le conteneur, permettant aux commandes virsh ou Vagrant d'atteindre l'hyperviseur.
+* Gestion des Permissions : L'ajout de la directive user: "1000:0" dans le docker-compose.yml est essentiel. Il garantit que le processus Backend s'exécute avec les mêmes droits que l'utilisateur du serveur (UID 1000) et le groupe du socket (GID 0/root). Sans cela, l'accès au socket serait refusé.
+Pourquoi un conteneur séparé pour le Backend ?
+1. Isolation des dépendances : Le Backend nécessite des outils lourds (Vagrant, compilateurs, Libvirt). Les séparer permet de garder le Frontend très léger.
+2. Sécurité : L'accès au socket KVM est centralisé dans ce conteneur. Si le Frontend était compromis, il ne donnerait pas accès directement au cœur de la virtualisation.
+3. Environnement Propre : Le conteneur garantit que Vagrant et Libvirt sont installés de manière propre et cohérente, indépendamment du système d'exploitation hôte.

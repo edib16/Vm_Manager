@@ -5,6 +5,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: vm_manager_backend
+    user: "1000:0" # UID 1000 (edib) : GID 0 (root)
     restart: always
     env_file:
       - .env
